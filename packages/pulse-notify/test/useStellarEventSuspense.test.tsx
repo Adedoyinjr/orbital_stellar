@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
 import type { NormalizedEvent } from "@orbital-stellar/pulse-core";
@@ -6,6 +6,7 @@ import {
   __getConnectionPoolSizeForTests,
   __resetConnectionPoolForTests,
 } from "../src/connectionPool.ts";
+import { __resetSuspenseResourcesForTests } from "../src/useStellarEventSuspense.ts";
 import { useStellarEventSuspense } from "../src/index.ts";
 import type { UseEventConfig } from "../src/index.ts";
 
@@ -76,13 +77,16 @@ beforeEach(() => {
   globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
   MockEventSource.instances = [];
   MockEventSource.failureUrl = undefined;
+  __resetSuspenseResourcesForTests();
   __resetConnectionPoolForTests();
 });
 
 afterEach(() => {
   cleanup();
+  __resetSuspenseResourcesForTests();
   __resetConnectionPoolForTests();
   globalThis.EventSource = originalEventSource;
+  vi.useRealTimers();
 });
 
 describe("useStellarEventSuspense", () => {
@@ -191,5 +195,46 @@ describe("useStellarEventSuspense", () => {
     act(() => MockEventSource.instances[0]?.onerror?.());
 
     expect(screen.getByTestId("fallback")).toBeTruthy();
+  });
+
+  it("releases the connection when a suspended render is abandoned before commit", () => {
+    vi.useFakeTimers();
+
+    renderSuspense({
+      serverUrl: "https://suspense-abandoned.example.com",
+      address: "GABANDONED",
+    });
+
+    expect(__getConnectionPoolSizeForTests()).toBe(1);
+    expect(MockEventSource.instances[0]?.closeCount).toBe(0);
+
+    // No event ever arrives, so the component stays suspended and never
+    // commits - no effect, so no effect cleanup. The resource must still stop
+    // holding the connection open.
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(MockEventSource.instances[0]?.closeCount).toBe(1);
+    expect(__getConnectionPoolSizeForTests()).toBe(0);
+  });
+
+  it("keeps the connection past the abandoned-render window once a consumer commits", async () => {
+    vi.useFakeTimers();
+
+    renderSuspense({
+      serverUrl: "https://suspense-committed.example.com",
+      address: "GCOMMITTED",
+    });
+
+    act(() => MockEventSource.instances[0]?.emit(makeEvent("payment.received")));
+    await vi.waitFor(() => expect(screen.getByTestId("event")).toBeTruthy());
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(MockEventSource.instances[0]?.closeCount).toBe(0);
+    expect(__getConnectionPoolSizeForTests()).toBe(1);
   });
 });

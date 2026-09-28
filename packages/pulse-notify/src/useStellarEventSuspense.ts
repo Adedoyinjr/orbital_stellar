@@ -31,10 +31,20 @@ type ResourceEntry<T extends NormalizedEvent> = {
   /** Number of committed hook instances currently using this resource. */
   refCount: number;
   connection?: ReturnType<typeof acquireEventConnection>;
+  /**
+   * The connection is acquired during render (a suspended render never runs
+   * effects, so acquiring in an effect deadlocks the hook). If no consumer
+   * commits within this window the render was abandoned, so the connection is
+   * released instead of leaked. Cleared as soon as one consumer commits.
+   */
+  releaseTimer?: ReturnType<typeof setTimeout>;
 };
 
 // Keyed by the same tuple used by the connection pool.
 const resourceCache = new Map<string, ResourceEntry<NormalizedEvent>>();
+
+/** How long a rendered-but-never-committed resource keeps its connection. */
+const ABANDONED_RELEASE_MS = 30_000;
 
 function buildResourceKey(
   serverUrl: string,
@@ -98,7 +108,24 @@ function getOrCreateResource<T extends NormalizedEvent>(
     throw error;
   }
 
+  entry.releaseTimer = setTimeout(() => {
+    entry.releaseTimer = undefined;
+    if (entry.refCount > 0) return;
+    entry.connection?.unsubscribe();
+    entry.connection = undefined;
+    resourceCache.delete(resourceKey);
+  }, ABANDONED_RELEASE_MS);
+
   return entry as ResourceEntry<T>;
+}
+
+/** Test-only reset so a pending resource cannot outlive its test file. */
+export function __resetSuspenseResourcesForTests(): void {
+  for (const entry of resourceCache.values()) {
+    if (entry.releaseTimer !== undefined) clearTimeout(entry.releaseTimer);
+    entry.connection?.unsubscribe();
+  }
+  resourceCache.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +228,10 @@ export function useStellarEventSuspense<T extends NormalizedEvent = NormalizedEv
       connection.unsubscribe();
       currentEntry.refCount -= 1;
       if (currentEntry.refCount <= 0) {
+        if (currentEntry.releaseTimer !== undefined) {
+          clearTimeout(currentEntry.releaseTimer);
+          currentEntry.releaseTimer = undefined;
+        }
         resourceCache.delete(resourceKey);
       }
     };
