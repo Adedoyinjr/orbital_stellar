@@ -1,6 +1,5 @@
 import { CursorStore } from "./CursorStore.js";
 
-/** Result returned after migrating a cursor store to a target store. */
 export interface MigrateCursorsResult {
   migrated: number;
 }

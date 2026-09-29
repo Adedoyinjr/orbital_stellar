@@ -76,11 +76,9 @@ export class NetworkMismatchError extends Error {
   }
 }
 
-/** Stable machine-readable category for Soroban RPC failures. */
 export type SorobanRpcErrorCode =
   "network" | "rate_limit" | "auth" | "invalid_request" | "server" | "unknown";
 
-/** Options used to construct a Soroban RPC error. */
 export type SorobanRpcErrorOptions = {
   code: SorobanRpcErrorCode;
   retryable: boolean;
