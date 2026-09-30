@@ -182,6 +182,28 @@ describe("useStellarEventSuspense", () => {
     expect(__getConnectionPoolSizeForTests()).toBe(0);
   });
 
+  it("keeps the shared connection open until the last consumer unmounts", async () => {
+    const config = {
+      serverUrl: "https://suspense-shared.example.com",
+      address: "GSHARED",
+    } satisfies UseEventConfig;
+
+    const first = renderSuspense(config);
+    const second = renderSuspense(config);
+
+    expect(MockEventSource.instances).toHaveLength(1);
+    act(() => MockEventSource.instances[0]?.emit(makeEvent("payment.received")));
+    await vi.waitFor(() => expect(screen.getAllByTestId("event")).toHaveLength(2));
+
+    first.unmount();
+    expect(MockEventSource.instances[0]?.closeCount).toBe(0);
+    expect(__getConnectionPoolSizeForTests()).toBe(1);
+
+    second.unmount();
+    expect(MockEventSource.instances[0]?.closeCount).toBe(1);
+    expect(__getConnectionPoolSizeForTests()).toBe(0);
+  });
+
   it("handles open and connection error callbacks without resolving", () => {
     const config = {
       serverUrl: "https://suspense-errors.example.com",

@@ -225,14 +225,19 @@ export function useStellarEventSuspense<T extends NormalizedEvent = NormalizedEv
     currentEntry.refCount += 1;
 
     return () => {
-      connection.unsubscribe();
       currentEntry.refCount -= 1;
+      // The connection is shared by every consumer of this resource, so only
+      // the last committed consumer may release it.
       if (currentEntry.refCount <= 0) {
         if (currentEntry.releaseTimer !== undefined) {
           clearTimeout(currentEntry.releaseTimer);
           currentEntry.releaseTimer = undefined;
         }
-        resourceCache.delete(resourceKey);
+        connection.unsubscribe();
+        currentEntry.connection = undefined;
+        if (resourceCache.get(resourceKey) === currentEntry) {
+          resourceCache.delete(resourceKey);
+        }
       }
     };
   }, [resourceKey]);
