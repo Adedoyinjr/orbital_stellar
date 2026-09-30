@@ -110,7 +110,12 @@ export class SorobanRpcError extends Error {
   }
 }
 
-/** Returns true when the value is a Soroban RPC error instance. */
+/**
+ * Returns true when the value is a Soroban RPC error instance.
+ *
+ * @param error - Any caught value.
+ * @returns `true` if `error` is a {@link SorobanRpcError}.
+ */
 export function isSorobanRpcError(error: unknown): error is SorobanRpcError {
   return error instanceof SorobanRpcError;
 }
