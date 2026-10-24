@@ -1,0 +1,4 @@
+Schema file "specs/community/phoenix-usdc-pool.json" is not a valid ContractSpec:
+  - functions[14].returns.ok.elements: tuple requires at least 2 elements
+  - functions[16].returns.ok.elements: tuple requires at least 2 elements
+  - functions[21].returns.ok.elements: tuple requires at least 2 elements
